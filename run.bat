@@ -11,11 +11,13 @@ echo Current file: %CURFILE%
 REM Run Docker command
 docker run --rm --gpus all ^
     -v "%CURDIR%:/data" ^
+    -v "%USERPROFILE%\.cache\huggingface:/root/.cache/huggingface" ^
     systran-faster-whisper:latest ^
     "/data/%CURFILE%" ^
-    --model-size large-v3 ^
+    --model-size distil-large-v3 ^
     --device cuda ^
-    --compute-type float16 ^
+    --compute-type int8 ^
     --language en ^
+    --beam-size 1 ^
     --output-dir /data
 pause

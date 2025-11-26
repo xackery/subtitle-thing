@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import argparse
-import os
+import os, time
 from datetime import timedelta
 
 from faster_whisper import WhisperModel
@@ -29,13 +29,25 @@ def write_srt(segments, out_path: str):
             f.write(text + "\n\n")
 
 
-def write_txt(segments, out_path: str):
+def write_txt(segments, out_path: str, fps: int):
     with open(out_path, "w", encoding="utf-8") as f:
         for seg in segments:
-            f.write(f"[{format_timestamp(seg.start)}] {seg.text.strip()}\n")
+            tc = format_timestamp_frames(seg.start, fps)
+            f.write(f"[{tc}] {seg.text.strip()}\n")
 
+def format_timestamp_frames(seconds: float, fps: int) -> str:
+    # Convert seconds to HH:MM:SS:FF
+    total_frames = int(round(seconds * fps))
+    frames = total_frames % fps
+    total_seconds = total_frames // fps
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    secs = total_seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}:{frames:02d}"
 
 def main():
+    print("SYSTRAN/faster-whisper SRT Transcriber")
+    start_time = time.time()
     parser = argparse.ArgumentParser(
         description="Transcribe audio/video to SRT using SYSTRAN/faster-whisper"
     )
@@ -72,6 +84,12 @@ def main():
         default=None,
         help="Directory for outputs (default: same as input file)",
     )
+    parser.add_argument(
+        "--fps",
+        type=int,
+        default=60,
+        help="Timecode FPS for TXT cliff notes (e.g. 30, 60).",
+    )
 
     args = parser.parse_args()
 
@@ -85,20 +103,24 @@ def main():
     srt_path = os.path.join(base_dir, base_name + ".srt")
     txt_path = os.path.join(base_dir, base_name + ".txt")
 
+    model_load_time = time.time()
     print(f"Loading model '{args.model_size}' on {args.device} ({args.compute_type})...")
     model = WhisperModel(
         args.model_size,
         device=args.device,
         compute_type=args.compute_type,
     )
+    print(f"Model loaded in {time.time() - model_load_time:.2f} seconds")
 
+    transcribe_time = time.time()
     print(f"Transcribing: {in_path}")
     segments, info = model.transcribe(
         in_path,
         beam_size=args.beam_size,
         language=args.language,
-        vad_filter=True,  # skip long silences
+        vad_filter=False,
     )
+    print(f"Transcription completed in {time.time() - transcribe_time:.2f} seconds")
 
     segments = list(segments)  # force evaluation so we can write outputs
     print(f"Detected language: {info.language} (p={info.language_probability:.3f})")
@@ -106,9 +128,10 @@ def main():
 
     os.makedirs(base_dir, exist_ok=True)
     write_srt(segments, srt_path)
-    write_txt(segments, txt_path)
+    write_txt(segments, txt_path, args.fps)
 
     print(f"Wrote:\n  {srt_path}\n  {txt_path}")
+    print(f"Total time: {time.time() - start_time:.2f} seconds")
 
 
 if __name__ == "__main__":
